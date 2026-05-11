@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<template>
+  <description>Fetches data from an HTTP API and stores it as JSON in MinIO (lakehouse-raw bucket). Configure: HTTP Endpoint URL, S3 Bucket, S3 Object Key prefix, and the AWS Credentials Service Controller pointing to MinIO.</description>
+  <groupId>root</groupId>
+  <name>API to MinIO</name>
+  <snippet>
+    <connections>
+      <!-- InvokeHTTP Success → UpdateAttribute -->
+      <connections>
+        <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+        <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+        <destination>
+          <groupId>root</groupId>
+          <id>a1000000-0000-0000-0000-000000000003</id>
+          <type>PROCESSOR</type>
+        </destination>
+        <flowFileExpiration>0 sec</flowFileExpiration>
+        <id>a1000000-0000-0000-0000-000000000005</id>
+        <labelIndex>1</labelIndex>
+        <name/>
+        <selectedRelationships>Response</selectedRelationships>
+        <source>
+          <groupId>root</groupId>
+          <id>a1000000-0000-0000-0000-000000000002</id>
+          <type>PROCESSOR</type>
+        </source>
+        <zIndex>0</zIndex>
+      </connections>
+      <!-- UpdateAttribute → PutS3Object -->
+      <connections>
+        <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+        <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+        <destination>
+          <groupId>root</groupId>
+          <id>a1000000-0000-0000-0000-000000000004</id>
+          <type>PROCESSOR</type>
+        </destination>
+        <flowFileExpiration>0 sec</flowFileExpiration>
+        <id>a1000000-0000-0000-0000-000000000006</id>
+        <labelIndex>1</labelIndex>
+        <name/>
+        <selectedRelationships>success</selectedRelationships>
+        <source>
+          <groupId>root</groupId>
+          <id>a1000000-0000-0000-0000-000000000003</id>
+          <type>PROCESSOR</type>
+        </source>
+        <zIndex>0</zIndex>
+      </connections>
+    </connections>
+    <funnels/>
+    <inputPorts/>
+    <labels/>
+    <outputPorts/>
+    <processGroups/>
+    <processors>
+      <!-- InvokeHTTP -->
+      <processors>
+        <bundle>
+          <artifact>nifi-standard-nar</artifact>
+          <group>org.apache.nifi</group>
+          <version>1.27.0</version>
+        </bundle>
+        <config>
+          <bulletinLevel>WARN</bulletinLevel>
+          <comments>Fetches data from the configured HTTP API endpoint.</comments>
+          <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+          <executionNode>ALL</executionNode>
+          <lossTolerant>false</lossTolerant>
+          <penaltyDuration>30 sec</penaltyDuration>
+          <properties>
+            <entry><key>HTTP Method</key><value>GET</value></entry>
+            <entry><key>HTTP URL</key><value>https://api.example.com/data</value></entry>
+            <entry><key>Response Body Ignored</key><value>false</value></entry>
+            <entry><key>Request Content-Type</key><value>application/json</value></entry>
+          </properties>
+          <runDurationMillis>0</runDurationMillis>
+          <schedulingPeriod>1 hour</schedulingPeriod>
+          <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+          <yieldDuration>1 sec</yieldDuration>
+        </config>
+        <id>a1000000-0000-0000-0000-000000000002</id>
+        <name>InvokeHTTP</name>
+        <position><x>100.0</x><y>100.0</y></position>
+        <relationships>
+          <autoTerminate>false</autoTerminate>
+          <name>Response</name>
+        </relationships>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>Failure</name>
+        </relationships>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>No Retry</name>
+        </relationships>
+        <style/>
+        <type>org.apache.nifi.processors.standard.InvokeHTTP</type>
+      </processors>
+      <!-- UpdateAttribute -->
+      <processors>
+        <bundle>
+          <artifact>nifi-standard-nar</artifact>
+          <group>org.apache.nifi</group>
+          <version>1.27.0</version>
+        </bundle>
+        <config>
+          <bulletinLevel>WARN</bulletinLevel>
+          <comments>Sets the S3 key (filename) for the object in MinIO.</comments>
+          <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+          <executionNode>ALL</executionNode>
+          <lossTolerant>false</lossTolerant>
+          <penaltyDuration>30 sec</penaltyDuration>
+          <properties>
+            <entry><key>filename</key><value>api_data_${now():format('yyyyMMdd_HHmmss')}.json</value></entry>
+          </properties>
+          <runDurationMillis>0</runDurationMillis>
+          <schedulingPeriod>0 sec</schedulingPeriod>
+          <schedulingStrategy>EVENT_DRIVEN</schedulingStrategy>
+          <yieldDuration>1 sec</yieldDuration>
+        </config>
+        <id>a1000000-0000-0000-0000-000000000003</id>
+        <name>UpdateAttribute</name>
+        <position><x>400.0</x><y>100.0</y></position>
+        <relationships>
+          <autoTerminate>false</autoTerminate>
+          <name>success</name>
+        </relationships>
+        <style/>
+        <type>org.apache.nifi.processors.attributes.UpdateAttribute</type>
+      </processors>
+      <!-- PutS3Object -->
+      <processors>
+        <bundle>
+          <artifact>nifi-aws-nar</artifact>
+          <group>org.apache.nifi</group>
+          <version>1.27.0</version>
+        </bundle>
+        <config>
+          <bulletinLevel>WARN</bulletinLevel>
+          <comments>Writes the FlowFile to MinIO (S3-compatible). Set Endpoint Override URL to http://minio:9000.</comments>
+          <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+          <executionNode>ALL</executionNode>
+          <lossTolerant>false</lossTolerant>
+          <penaltyDuration>30 sec</penaltyDuration>
+          <properties>
+            <entry><key>Bucket</key><value>lakehouse-raw</value></entry>
+            <entry><key>Object Key</key><value>api/${filename}</value></entry>
+            <entry><key>Access Key ID</key><value>minioadmin</value></entry>
+            <entry><key>Secret Access Key</key><value>minioadmin</value></entry>
+            <entry><key>Endpoint Override URL</key><value>http://minio:9000</value></entry>
+            <entry><key>Region</key><value>us-east-1</value></entry>
+            <entry><key>Path Style Access</key><value>true</value></entry>
+          </properties>
+          <runDurationMillis>0</runDurationMillis>
+          <schedulingPeriod>0 sec</schedulingPeriod>
+          <schedulingStrategy>EVENT_DRIVEN</schedulingStrategy>
+          <yieldDuration>1 sec</yieldDuration>
+        </config>
+        <id>a1000000-0000-0000-0000-000000000004</id>
+        <name>PutS3Object - MinIO</name>
+        <position><x>700.0</x><y>100.0</y></position>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>success</name>
+        </relationships>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>failure</name>
+        </relationships>
+        <style/>
+        <type>org.apache.nifi.processors.aws.s3.PutS3Object</type>
+      </processors>
+    </processors>
+    <remoteProcessGroups/>
+  </snippet>
+  <timestamp>05/11/2026 08:00:00 UTC</timestamp>
+</template>

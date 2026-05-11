@@ -1,0 +1,36 @@
+/* globals.css — Global styles and React Flow overrides for the dark-themed lakehouse UI. */
+/* @import must precede @tailwind directives to satisfy PostCSS ordering rules */
+@import '@xyflow/react/dist/style.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --border: #2d3142;
+  --blue: #3b82f6;
+  --emerald: #10b981;
+  --text: #e2e8f0;
+  --muted: #64748b;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+
+/* React Flow overrides */
+.react-flow__background { background: var(--bg) !important; }
+.react-flow__edge-path { stroke: #3b82f6; }
+.react-flow__handle {
+  width: 10px; height: 10px;
+  background: #3b82f6;
+  border: 2px solid #0f1117;
+}
+.react-flow__handle:hover { background: #10b981; }
+.react-flow__controls { background: #1a1d27; border: 1px solid #2d3142; }
+.react-flow__controls-button { background: #1a1d27; border-color: #2d3142; fill: #94a3b8; }
+.react-flow__controls-button:hover { background: #2d3142; }
+.react-flow__minimap { background: #1a1d27; border: 1px solid #2d3142; }
+.react-flow__attribution { display: none; }

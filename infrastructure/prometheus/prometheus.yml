@@ -1,0 +1,31 @@
+# infrastructure/prometheus/prometheus.yml
+# Prometheus scrape configuration for the Lakehouse platform.
+# Targets:
+#   - lakehouse-backend: FastAPI /api/metrics (prometheus-fastapi-instrumentator)
+#   - prometheus itself: self-monitoring
+# Trino and NiFi JMX exporters are optional add-ons not included in the MVP.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    platform: lakehouse
+
+scrape_configs:
+  # FastAPI backend — all HTTP metrics via prometheus-fastapi-instrumentator
+  - job_name: lakehouse-backend
+    static_configs:
+      - targets: ['backend:8000']
+    metrics_path: /api/metrics
+
+  # MinIO — built-in Prometheus endpoint (no auth required for local dev)
+  - job_name: minio
+    static_configs:
+      - targets: ['minio:9000']
+    metrics_path: /minio/v2/metrics/cluster
+    scheme: http
+
+  # Prometheus self-monitoring
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

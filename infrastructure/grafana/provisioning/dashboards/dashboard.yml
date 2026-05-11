@@ -1,0 +1,14 @@
+# infrastructure/grafana/provisioning/dashboards/dashboard.yml
+# Tells Grafana where to find pre-built dashboard JSON files.
+
+apiVersion: 1
+
+providers:
+  - name: lakehouse-dashboards
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

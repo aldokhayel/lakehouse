@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<template>
+  <description>Exports documents from a MongoDB collection and stores them as JSON in MinIO (lakehouse-raw bucket). Configure: mongo_database and mongo_collection flow-file attributes, and S3 credentials. Documents are batched before upload.</description>
+  <groupId>root</groupId>
+  <name>MongoDB to MinIO</name>
+  <snippet>
+    <connections>
+      <!-- GetMongo → MergeContent -->
+      <connections>
+        <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+        <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+        <destination>
+          <groupId>root</groupId>
+          <id>d1000000-0000-0000-0000-000000000003</id>
+          <type>PROCESSOR</type>
+        </destination>
+        <flowFileExpiration>0 sec</flowFileExpiration>
+        <id>d1000000-0000-0000-0000-000000000006</id>
+        <labelIndex>1</labelIndex>
+        <name/>
+        <selectedRelationships>success</selectedRelationships>
+        <source>
+          <groupId>root</groupId>
+          <id>d1000000-0000-0000-0000-000000000002</id>
+          <type>PROCESSOR</type>
+        </source>
+        <zIndex>0</zIndex>
+      </connections>
+      <!-- MergeContent → PutS3Object -->
+      <connections>
+        <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+        <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+        <destination>
+          <groupId>root</groupId>
+          <id>d1000000-0000-0000-0000-000000000004</id>
+          <type>PROCESSOR</type>
+        </destination>
+        <flowFileExpiration>0 sec</flowFileExpiration>
+        <id>d1000000-0000-0000-0000-000000000007</id>
+        <labelIndex>1</labelIndex>
+        <name/>
+        <selectedRelationships>merged</selectedRelationships>
+        <source>
+          <groupId>root</groupId>
+          <id>d1000000-0000-0000-0000-000000000003</id>
+          <type>PROCESSOR</type>
+        </source>
+        <zIndex>0</zIndex>
+      </connections>
+    </connections>
+    <funnels/>
+    <inputPorts/>
+    <labels/>
+    <outputPorts/>
+    <processGroups/>
+    <processors>
+      <!-- GetMongo -->
+      <processors>
+        <bundle>
+          <artifact>nifi-mongodb-nar</artifact>
+          <group>org.apache.nifi</group>
+          <version>1.27.0</version>
+        </bundle>
+        <config>
+          <bulletinLevel>WARN</bulletinLevel>
+          <comments>Reads documents from the specified MongoDB collection. Set mongo_database and mongo_collection as flow-file attributes before this processor.</comments>
+          <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+          <executionNode>ALL</executionNode>
+          <lossTolerant>false</lossTolerant>
+          <penaltyDuration>30 sec</penaltyDuration>
+          <properties>
+            <entry><key>Mongo URI</key><value>mongodb://mongo:27017</value></entry>
+            <entry><key>Mongo Database Name</key><value>${mongo_database}</value></entry>
+            <entry><key>Mongo Collection Name</key><value>${mongo_collection}</value></entry>
+            <entry><key>Projection</key><value></value></entry>
+            <entry><key>Results Per FlowFile</key><value>1000</value></entry>
+          </properties>
+          <runDurationMillis>0</runDurationMillis>
+          <schedulingPeriod>1 hour</schedulingPeriod>
+          <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+          <yieldDuration>1 sec</yieldDuration>
+        </config>
+        <id>d1000000-0000-0000-0000-000000000002</id>
+        <name>GetMongo</name>
+        <position><x>100.0</x><y>100.0</y></position>
+        <relationships>
+          <autoTerminate>false</autoTerminate>
+          <name>success</name>
+        </relationships>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>failure</name>
+        </relationships>
+        <style/>
+        <type>org.apache.nifi.processors.mongodb.GetMongo</type>
+      </processors>
+      <!-- MergeContent -->
+      <processors>
+        <bundle>
+          <artifact>nifi-standard-nar</artifact>
+          <group>org.apache.nifi</group>
+          <version>1.27.0</version>
+        </bundle>
+        <config>
+          <bulletinLevel>WARN</bulletinLevel>
+          <comments>Batches individual MongoDB document FlowFiles into a single JSON array before writing to MinIO.</comments>
+          <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+          <executionNode>ALL</executionNode>
+          <lossTolerant>false</lossTolerant>
+          <penaltyDuration>30 sec</penaltyDuration>
+          <properties>
+            <entry><key>Minimum Number of Entries</key><value>1</value></entry>
+            <entry><key>Maximum Number of Entries</key><value>1000</value></entry>
+            <entry><key>Merge Strategy</key><value>Bin-Packing Algorithm</value></entry>
+          </properties>
+          <runDurationMillis>0</runDurationMillis>
+          <schedulingPeriod>0 sec</schedulingPeriod>
+          <schedulingStrategy>EVENT_DRIVEN</schedulingStrategy>
+          <yieldDuration>1 sec</yieldDuration>
+        </config>
+        <id>d1000000-0000-0000-0000-000000000003</id>
+        <name>MergeContent</name>
+        <position><x>400.0</x><y>100.0</y></position>
+        <relationships>
+          <autoTerminate>false</autoTerminate>
+          <name>merged</name>
+        </relationships>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>failure</name>
+        </relationships>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>original</name>
+        </relationships>
+        <style/>
+        <type>org.apache.nifi.processors.standard.MergeContent</type>
+      </processors>
+      <!-- PutS3Object -->
+      <processors>
+        <bundle>
+          <artifact>nifi-aws-nar</artifact>
+          <group>org.apache.nifi</group>
+          <version>1.27.0</version>
+        </bundle>
+        <config>
+          <bulletinLevel>WARN</bulletinLevel>
+          <comments>Writes the batched JSON documents to MinIO under mongodb/{mongo_database}/{mongo_collection}/. Set Endpoint Override URL to http://minio:9000.</comments>
+          <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+          <executionNode>ALL</executionNode>
+          <lossTolerant>false</lossTolerant>
+          <penaltyDuration>30 sec</penaltyDuration>
+          <properties>
+            <entry><key>Bucket</key><value>lakehouse-raw</value></entry>
+            <entry><key>Object Key</key><value>mongodb/${mongo_database}/${mongo_collection}/${now():format('yyyyMMdd_HHmmss')}.json</value></entry>
+            <entry><key>Access Key ID</key><value>minioadmin</value></entry>
+            <entry><key>Secret Access Key</key><value>minioadmin</value></entry>
+            <entry><key>Endpoint Override URL</key><value>http://minio:9000</value></entry>
+            <entry><key>Region</key><value>us-east-1</value></entry>
+            <entry><key>Path Style Access</key><value>true</value></entry>
+          </properties>
+          <runDurationMillis>0</runDurationMillis>
+          <schedulingPeriod>0 sec</schedulingPeriod>
+          <schedulingStrategy>EVENT_DRIVEN</schedulingStrategy>
+          <yieldDuration>1 sec</yieldDuration>
+        </config>
+        <id>d1000000-0000-0000-0000-000000000004</id>
+        <name>PutS3Object - MinIO</name>
+        <position><x>700.0</x><y>100.0</y></position>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>success</name>
+        </relationships>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>failure</name>
+        </relationships>
+        <style/>
+        <type>org.apache.nifi.processors.aws.s3.PutS3Object</type>
+      </processors>
+    </processors>
+    <remoteProcessGroups/>
+  </snippet>
+  <timestamp>05/11/2026 08:00:00 UTC</timestamp>
+</template>

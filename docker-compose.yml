@@ -1,0 +1,355 @@
+# docker-compose.yml
+# Lakehouse platform - all services defined here.
+# Phase 1 services (minio, minio-init, metastore-db, hive-metastore, trino) start by default.
+# Phase 2+ services are gated behind Docker Compose profiles so they never start accidentally:
+#   phase2  -> backend
+#   phase3  -> nifi
+#   phase4  -> frontend
+#   phase5  -> chromadb
+#   phase6  -> prometheus, grafana
+#
+# Usage:
+#   make up                          # Start Phase 1 only
+#   docker compose --profile phase2 up -d   # Also start backend
+#   docker compose --profile phase6 up -d   # Also start monitoring
+
+
+# ---------------------------------------------------------------------------
+# Named volumes
+# ---------------------------------------------------------------------------
+volumes:
+  minio-data:
+  metastore-db-data:
+  trino-data:
+  backend-sqlite:
+  chromadb-data:
+  prometheus-data:
+  grafana-data:
+  nifi-data:
+  nifi-logs:
+  nifi-conf:
+
+# ---------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------
+networks:
+  lakehouse-net:
+    driver: bridge
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+services:
+
+  # -------------------------------------------------------------------------
+  # PHASE 1 — Core lakehouse infrastructure
+  # -------------------------------------------------------------------------
+
+  # MinIO: S3-compatible object storage
+  minio:
+    image: minio/minio:latest
+    container_name: lakehouse-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # minio-init: one-shot container that creates the lakehouse buckets
+  minio-init:
+    image: minio/mc:latest
+    container_name: lakehouse-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ./infrastructure/minio/init-buckets.sh:/init-buckets.sh:ro
+    entrypoint: ["/bin/sh", "/init-buckets.sh"]
+    networks:
+      - lakehouse-net
+    restart: "no"
+
+  # metastore-db: PostgreSQL backend for Hive Metastore
+  metastore-db:
+    image: postgres:15
+    container_name: lakehouse-metastore-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${METASTORE_DB_NAME:-metastore}
+      POSTGRES_USER: ${METASTORE_DB_USER:-hive}
+      POSTGRES_PASSWORD: ${METASTORE_DB_PASSWORD:-hive}
+    ports:
+      - "${METASTORE_DB_PORT:-5432}:5432"
+    volumes:
+      - metastore-db-data:/var/lib/postgresql/data
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${METASTORE_DB_USER:-hive} -d ${METASTORE_DB_NAME:-metastore}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # hive-metastore: Standalone Hive Metastore (catalog for Iceberg tables)
+  hive-metastore:
+    build:
+      context: ./infrastructure/hive-metastore
+      dockerfile: Dockerfile
+    image: lakehouse-hive-metastore:latest
+    container_name: lakehouse-hive-metastore
+    restart: unless-stopped
+    depends_on:
+      metastore-db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      HIVE_METASTORE_DB_HOST: metastore-db
+      HIVE_METASTORE_DB_PORT: 5432
+      HIVE_METASTORE_DB_NAME: ${METASTORE_DB_NAME:-metastore}
+      HIVE_METASTORE_DB_USER: ${METASTORE_DB_USER:-hive}
+      HIVE_METASTORE_DB_PASSWORD: ${METASTORE_DB_PASSWORD:-hive}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${HIVE_METASTORE_PORT:-9083}:9083"
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9083 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # trino: Distributed SQL query engine
+  trino:
+    build:
+      context: ./infrastructure/trino
+      dockerfile: Dockerfile
+    image: lakehouse-trino:latest
+    container_name: lakehouse-trino
+    restart: unless-stopped
+    depends_on:
+      hive-metastore:
+        condition: service_healthy
+    ports:
+      - "${TRINO_PORT:-8080}:8080"
+    volumes:
+      - trino-data:/data/trino
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "/health-check.sh"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 60s
+
+  # -------------------------------------------------------------------------
+  # PHASE 2 — Backend API + dbt (profile: phase2)
+  # -------------------------------------------------------------------------
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: lakehouse-backend:latest
+    container_name: lakehouse-backend
+    profiles:
+      - phase2
+    restart: unless-stopped
+    depends_on:
+      trino:
+        condition: service_healthy
+    environment:
+      TRINO_HOST: trino
+      TRINO_PORT: "${TRINO_PORT:-8080}"
+      NIFI_HOST: nifi
+      NIFI_PORT: "${NIFI_PORT:-8443}"
+      NIFI_USERNAME: "${NIFI_USERNAME:-admin}"
+      NIFI_PASSWORD: "${NIFI_PASSWORD:-adminadminadmin}"
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: "${CHROMADB_PORT:-8500}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_MODEL: "${OPENROUTER_MODEL:-anthropic/claude-sonnet-4-20250514}"
+      MINIO_ENDPOINT: "http://minio:9000"
+      MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      SQLITE_PATH: /data/lakehouse.db
+      DBT_PROJECT_DIR: /dbt_project
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - backend-sqlite:/data
+      - ./dbt_project:/dbt_project:ro
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # PHASE 3 — NiFi data ingestion (profile: phase3)
+  # -------------------------------------------------------------------------
+
+  nifi:
+    build:
+      context: ./infrastructure/nifi
+      dockerfile: Dockerfile
+    image: lakehouse-nifi:latest
+    container_name: lakehouse-nifi
+    profiles:
+      - phase3
+    restart: unless-stopped
+    environment:
+      SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_USERNAME:-admin}
+      SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD:-adminadminadmin}
+      NIFI_WEB_HTTPS_PORT: 8443
+      # Allow iframe embedding from the frontend and backend
+      NIFI_WEB_PROXY_HOST: "localhost:${FRONTEND_PORT:-3000},localhost:${BACKEND_PORT:-8000},localhost:8443"
+      NIFI_WEB_PROXY_CONTEXT_PATH: /
+    ports:
+      - "${NIFI_PORT:-8443}:8443"
+    volumes:
+      - nifi-data:/opt/nifi/nifi-current/data
+      - nifi-logs:/opt/nifi/nifi-current/logs
+      - nifi-conf:/opt/nifi/nifi-current/conf
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "curl", "-skf", "https://localhost:8443/nifi-api/system-diagnostics"]
+      interval: 30s
+      timeout: 20s
+      retries: 15
+      start_period: 120s
+
+  # -------------------------------------------------------------------------
+  # PHASE 4 — Frontend UI (profile: phase4)
+  # -------------------------------------------------------------------------
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: lakehouse-frontend:latest
+    container_name: lakehouse-frontend
+    profiles:
+      - phase4
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_BACKEND_URL: "http://localhost:${BACKEND_PORT:-8000}"
+      NEXT_PUBLIC_NIFI_URL: "https://localhost:${NIFI_PORT:-8443}"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    working_dir: /app
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # -------------------------------------------------------------------------
+  # PHASE 5 — ChromaDB vector store (profile: phase5)
+  # -------------------------------------------------------------------------
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: lakehouse-chromadb
+    profiles:
+      - phase5
+    restart: unless-stopped
+    ports:
+      - "${CHROMADB_PORT:-8500}:8000"
+    volumes:
+      - chromadb-data:/chroma/chroma
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # PHASE 6 — Monitoring: Prometheus + Grafana (profile: phase6)
+  # -------------------------------------------------------------------------
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: lakehouse-prometheus
+    profiles:
+      - phase6
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: lakehouse-grafana
+    profiles:
+      - phase6
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/lakehouse-overview.json
+    ports:
+      - "${GRAFANA_PORT:-3002}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - lakehouse-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  infrastructure/hive-metastore/metastore-site.xml
+  Template for the Hive Metastore configuration file.
+  Shell variable placeholders (${VAR_NAME}) are substituted at container
+  startup by entrypoint.sh using `envsubst`, producing hive-site.xml.
+  Do NOT reference this file directly — use the generated hive-site.xml.
+-->
+<configuration>
+  <!-- PostgreSQL backend connection -->
+  <property>
+    <name>javax.jdo.option.ConnectionURL</name>
+    <value>jdbc:postgresql://${HIVE_METASTORE_DB_HOST}:${HIVE_METASTORE_DB_PORT}/${HIVE_METASTORE_DB_NAME}</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionDriverName</name>
+    <value>org.postgresql.Driver</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionUserName</name>
+    <value>${HIVE_METASTORE_DB_USER}</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionPassword</name>
+    <value>${HIVE_METASTORE_DB_PASSWORD}</value>
+  </property>
+
+  <!-- MinIO / S3A configuration -->
+  <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>s3a://lakehouse-raw/warehouse</value>
+  </property>
+  <property>
+    <name>fs.s3a.endpoint</name>
+    <value>${MINIO_ENDPOINT}</value>
+  </property>
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>${MINIO_ACCESS_KEY}</value>
+  </property>
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>${MINIO_SECRET_KEY}</value>
+  </property>
+  <property>
+    <name>fs.s3a.path.style.access</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>fs.s3a.impl</name>
+    <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+  </property>
+  <property>
+    <name>fs.s3a.connection.ssl.enabled</name>
+    <value>false</value>
+  </property>
+
+  <!-- Schema management -->
+  <property>
+    <name>datanucleus.schema.autoCreateAll</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>hive.metastore.schema.verification</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>metastore.thrift.uris</name>
+    <value>thrift://0.0.0.0:9083</value>
+  </property>
+  <property>
+    <name>metastore.task.threads.always</name>
+    <value>org.apache.hadoop.hive.metastore.events.EventCleanerTask</value>
+  </property>
+  <property>
+    <name>metastore.expression.proxy</name>
+    <value>org.apache.hadoop.hive.metastore.DefaultPartitionExpressionProxy</value>
+  </property>
+</configuration>

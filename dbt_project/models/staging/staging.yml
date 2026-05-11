@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: Cleaned and typed orders from the raw layer.
+    columns:
+      - name: order_id
+        description: Unique order identifier.
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+      - name: amount_usd
+        description: Order total in USD.
+      - name: is_complete
+        description: True if the order status is 'completed'.
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['completed', 'pending', 'cancelled', 'refunded']

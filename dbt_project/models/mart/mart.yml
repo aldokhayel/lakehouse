@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: mart_daily_revenue
+    description: Daily revenue summary from completed orders. Business-ready aggregate.
+    columns:
+      - name: order_date
+        description: The calendar date.
+        tests:
+          - unique
+          - not_null
+      - name: order_count
+        description: Number of completed orders on this date.
+      - name: total_revenue
+        description: Sum of order values for completed orders.
+      - name: avg_order_value
+        description: Average order value for completed orders.

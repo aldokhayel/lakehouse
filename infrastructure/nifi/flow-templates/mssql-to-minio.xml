@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<template>
+  <description>Incrementally loads tables from Microsoft SQL Server and stores them as JSON in MinIO (lakehouse-raw bucket). Configure: JDBC URL in the DBCPConnectionPool controller service (use the SQL Server JDBC driver), table_name attribute, and S3 credentials.</description>
+  <groupId>root</groupId>
+  <name>MSSQL to MinIO</name>
+  <snippet>
+    <connections>
+      <!-- QueryDatabaseTableRecord → ConvertRecord -->
+      <connections>
+        <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+        <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+        <destination>
+          <groupId>root</groupId>
+          <id>c1000000-0000-0000-0000-000000000003</id>
+          <type>PROCESSOR</type>
+        </destination>
+        <flowFileExpiration>0 sec</flowFileExpiration>
+        <id>c1000000-0000-0000-0000-000000000005</id>
+        <labelIndex>1</labelIndex>
+        <name/>
+        <selectedRelationships>success</selectedRelationships>
+        <source>
+          <groupId>root</groupId>
+          <id>c1000000-0000-0000-0000-000000000002</id>
+          <type>PROCESSOR</type>
+        </source>
+        <zIndex>0</zIndex>
+      </connections>
+      <!-- ConvertRecord → PutS3Object -->
+      <connections>
+        <backPressureDataSizeThreshold>1 GB</backPressureDataSizeThreshold>
+        <backPressureObjectThreshold>10000</backPressureObjectThreshold>
+        <destination>
+          <groupId>root</groupId>
+          <id>c1000000-0000-0000-0000-000000000004</id>
+          <type>PROCESSOR</type>
+        </destination>
+        <flowFileExpiration>0 sec</flowFileExpiration>
+        <id>c1000000-0000-0000-0000-000000000006</id>
+        <labelIndex>1</labelIndex>
+        <name/>
+        <selectedRelationships>success</selectedRelationships>
+        <source>
+          <groupId>root</groupId>
+          <id>c1000000-0000-0000-0000-000000000003</id>
+          <type>PROCESSOR</type>
+        </source>
+        <zIndex>0</zIndex>
+      </connections>
+    </connections>
+    <funnels/>
+    <inputPorts/>
+    <labels/>
+    <outputPorts/>
+    <processGroups/>
+    <processors>
+      <!-- QueryDatabaseTableRecord -->
+      <processors>
+        <bundle>
+          <artifact>nifi-standard-nar</artifact>
+          <group>org.apache.nifi</group>
+          <version>1.27.0</version>
+        </bundle>
+        <config>
+          <bulletinLevel>WARN</bulletinLevel>
+          <comments>Incrementally queries a SQL Server table using the updated_at column as a watermark.</comments>
+          <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+          <executionNode>ALL</executionNode>
+          <lossTolerant>false</lossTolerant>
+          <penaltyDuration>30 sec</penaltyDuration>
+          <properties>
+            <entry><key>Database Connection Pooling Service</key><value>DBCPConnectionPool</value></entry>
+            <entry><key>Database Type</key><value>MS SQL 2012+</value></entry>
+            <entry><key>Table Name</key><value>${table_name}</value></entry>
+            <entry><key>Maximum-value Columns</key><value>updated_at</value></entry>
+            <entry><key>Record Writer</key><value>JsonRecordSetWriter</value></entry>
+          </properties>
+          <runDurationMillis>0</runDurationMillis>
+          <schedulingPeriod>1 hour</schedulingPeriod>
+          <schedulingStrategy>TIMER_DRIVEN</schedulingStrategy>
+          <yieldDuration>1 sec</yieldDuration>
+        </config>
+        <id>c1000000-0000-0000-0000-000000000002</id>
+        <name>QueryDatabaseTableRecord</name>
+        <position><x>100.0</x><y>100.0</y></position>
+        <relationships>
+          <autoTerminate>false</autoTerminate>
+          <name>success</name>
+        </relationships>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>failure</name>
+        </relationships>
+        <style/>
+        <type>org.apache.nifi.processors.standard.QueryDatabaseTableRecord</type>
+      </processors>
+      <!-- ConvertRecord -->
+      <processors>
+        <bundle>
+          <artifact>nifi-standard-nar</artifact>
+          <group>org.apache.nifi</group>
+          <version>1.27.0</version>
+        </bundle>
+        <config>
+          <bulletinLevel>WARN</bulletinLevel>
+          <comments>Converts Avro records from QueryDatabaseTableRecord to JSON format.</comments>
+          <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+          <executionNode>ALL</executionNode>
+          <lossTolerant>false</lossTolerant>
+          <penaltyDuration>30 sec</penaltyDuration>
+          <properties>
+            <entry><key>Record Reader</key><value>AvroReader</value></entry>
+            <entry><key>Record Writer</key><value>JsonRecordSetWriter</value></entry>
+          </properties>
+          <runDurationMillis>0</runDurationMillis>
+          <schedulingPeriod>0 sec</schedulingPeriod>
+          <schedulingStrategy>EVENT_DRIVEN</schedulingStrategy>
+          <yieldDuration>1 sec</yieldDuration>
+        </config>
+        <id>c1000000-0000-0000-0000-000000000003</id>
+        <name>ConvertRecord</name>
+        <position><x>400.0</x><y>100.0</y></position>
+        <relationships>
+          <autoTerminate>false</autoTerminate>
+          <name>success</name>
+        </relationships>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>failure</name>
+        </relationships>
+        <style/>
+        <type>org.apache.nifi.processors.standard.ConvertRecord</type>
+      </processors>
+      <!-- PutS3Object -->
+      <processors>
+        <bundle>
+          <artifact>nifi-aws-nar</artifact>
+          <group>org.apache.nifi</group>
+          <version>1.27.0</version>
+        </bundle>
+        <config>
+          <bulletinLevel>WARN</bulletinLevel>
+          <comments>Writes the JSON records to MinIO under mssql/{table_name}/. Set Endpoint Override URL to http://minio:9000.</comments>
+          <concurrentlySchedulableTaskCount>1</concurrentlySchedulableTaskCount>
+          <executionNode>ALL</executionNode>
+          <lossTolerant>false</lossTolerant>
+          <penaltyDuration>30 sec</penaltyDuration>
+          <properties>
+            <entry><key>Bucket</key><value>lakehouse-raw</value></entry>
+            <entry><key>Object Key</key><value>mssql/${table_name}/${now():format('yyyyMMdd_HHmmss')}.json</value></entry>
+            <entry><key>Access Key ID</key><value>minioadmin</value></entry>
+            <entry><key>Secret Access Key</key><value>minioadmin</value></entry>
+            <entry><key>Endpoint Override URL</key><value>http://minio:9000</value></entry>
+            <entry><key>Region</key><value>us-east-1</value></entry>
+            <entry><key>Path Style Access</key><value>true</value></entry>
+          </properties>
+          <runDurationMillis>0</runDurationMillis>
+          <schedulingPeriod>0 sec</schedulingPeriod>
+          <schedulingStrategy>EVENT_DRIVEN</schedulingStrategy>
+          <yieldDuration>1 sec</yieldDuration>
+        </config>
+        <id>c1000000-0000-0000-0000-000000000004</id>
+        <name>PutS3Object - MinIO</name>
+        <position><x>700.0</x><y>100.0</y></position>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>success</name>
+        </relationships>
+        <relationships>
+          <autoTerminate>true</autoTerminate>
+          <name>failure</name>
+        </relationships>
+        <style/>
+        <type>org.apache.nifi.processors.aws.s3.PutS3Object</type>
+      </processors>
+    </processors>
+    <remoteProcessGroups/>
+  </snippet>
+  <timestamp>05/11/2026 08:00:00 UTC</timestamp>
+</template>

@@ -1,0 +1,7 @@
+# infrastructure/trino/etc/catalog/mongodb.properties
+# Trino catalog for querying a MongoDB collection.
+# Connection details are read from environment variables at runtime.
+
+connector.name=mongodb
+mongodb.connection-url=mongodb://${ENV:MONGO_USER}:${ENV:MONGO_PASSWORD}@${ENV:MONGO_HOST}:${ENV:MONGO_PORT}
+mongodb.schema-collection=_schema
